@@ -1,121 +1,110 @@
 #define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <readline/history.h>
+
 #include <readline/readline.h>
+#include <readline/history.h>
+
 #include "lexer.h"
+#include "parser.h"
+#include "expand.h"
 
-// Helper function to resolve history file path at ~/.shellforge_history
-static char *get_history_path(void) {
-    char *home = getenv("HOME");
-    char *path;
+static void print_tokens(Token *tokens, int count)
+{
+    printf("\n------------ TOKENS ------------\n");
 
-    if (home) {
-        size_t len = strlen(home) + strlen("/.shellforge_history") + 1;
-        path = malloc(len);
-
-        if (path) {
-            sprintf(path, "%s/.shellforge_history", home);
-            return path;
-        }
+    for (int i = 0; i < count; i++) {
+        printf("%2d : %-12s %s\n",
+               i,
+               token_type_to_string(tokens[i].type),
+               tokens[i].value ? tokens[i].value : "");
     }
 
-    return strdup(".shellforge_history");
+    printf("--------------------------------\n");
 }
 
 int main(void)
 {
-    // Display a welcome banner when the shell starts
     printf("=====================================\n");
-    printf("Shellforge\n");
+    printf("        Shellforge\n");
     printf(" A Unix Style Shell written in C\n");
     printf("=====================================\n");
 
-    // Load history at startup
-    char *history_file = get_history_path();
-
-    if (history_file) {
-        read_history(history_file);
-    }
-
     char *line;
 
-    while (1)
-    {
+    while (1) {
+
         line = readline("shellforge$ ");
 
-        if (line == NULL)
-        {
+        if (line == NULL) {
             printf("\nGoodbye!\n");
             break;
         }
 
-        if (strlen(line) == 0)
-        {
-            free(line);
-            continue;
-        }
-
-        // Check if the command is "history"
-        if (strcmp(line, "history") == 0)
-        {
-            printf("------ Command History ------\n");
-
-            HIST_ENTRY **list = history_list();
-
-            if (list) {
-                for (int i = 0; list[i] != NULL; i++) {
-                    printf("%2d  %s\n", i + 1, list[i]->line);
-                }
-            }
-
-            printf("-----------------------------\n");
-
-            add_history(line);
+        if (strlen(line) == 0) {
             free(line);
             continue;
         }
 
         add_history(line);
 
-        if (strcmp(line, "exit") == 0)
-        {
+        if (strcmp(line, "exit") == 0) {
             free(line);
             printf("Exiting...\n");
             break;
         }
 
-        // Print tokenization results
-        printf("\n---------------- TOKENS ----------------\n");
+        Token tokens[128];
+        int token_count = 0;
 
         Lexer lexer;
         lexer_init(&lexer, line);
 
-        int token_index = 0;
-        Token token;
+        while (token_count < 127) {
 
-        do {
-            token = lexer_next_token(&lexer);
+            tokens[token_count] = lexer_next_token(&lexer);
 
-            printf(" %d : %-12s %s\n",
-                   token_index++,
-                   token_type_to_string(token.type),
-                   token.value ? token.value : "");
+            if (tokens[token_count].type == TOKEN_END) {
+                token_count++;
+                break;
+            }
 
-            free_token(&token);
+            token_count++;
+        }
 
-        } while (token.type != TOKEN_END);
+        print_tokens(tokens, token_count);
 
-        printf("----------------------------------------\n");
+        Pipeline pipeline;
+
+        if (parse_tokens(tokens, token_count, &pipeline) == 0) {
+
+            if (expand_pipeline(&pipeline) != 0) {
+                printf("Error: expansion failed\n");
+                free_pipeline(&pipeline);
+
+                for (int i = 0; i < token_count; i++) {
+                    free_token(&tokens[i]);
+                }
+
+                free(line);
+                continue;
+            }
+
+            pipeline_print(&pipeline);
+
+            free_pipeline(&pipeline);
+
+        } else {
+            printf("Error: invalid command syntax\n");
+        }
+
+        for (int i = 0; i < token_count; i++) {
+            free_token(&tokens[i]);
+        }
 
         free(line);
-    }
-
-    // Save history upon exit
-    if (history_file) {
-        write_history(history_file);
-        free(history_file);
     }
 
     return 0;
