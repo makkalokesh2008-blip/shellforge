@@ -91,16 +91,93 @@ static int execute_command(Command *cmd)
 int execute_pipeline(Pipeline *pipeline)
 {
     int i;
+    int previous_read = -1;
+    int pipefd[2];
+    int status;
+    pid_t *pids;
 
-    if (pipeline == NULL) {
+    if (pipeline == NULL || pipeline->command_count == 0) {
+        return -1;
+    }
+
+    if (pipeline->command_count == 1) {
+        return execute_command(&pipeline->commands[0]);
+    }
+
+    pids = malloc(sizeof(pid_t) * pipeline->command_count);
+
+    if (pids == NULL) {
+        perror("malloc");
         return -1;
     }
 
     for (i = 0; i < pipeline->command_count; i++) {
-        if (execute_command(&pipeline->commands[i]) < 0) {
+
+        if (i < pipeline->command_count - 1) {
+            if (pipe(pipefd) < 0) {
+                perror("pipe");
+                free(pids);
+                return -1;
+            }
+        }
+
+        pids[i] = fork();
+
+        if (pids[i] < 0) {
+            perror("fork");
+            free(pids);
             return -1;
         }
+
+        if (pids[i] == 0) {
+
+            if (previous_read != -1) {
+                if (dup2(previous_read, STDIN_FILENO) < 0) {
+                    perror("dup2");
+                    exit(1);
+                }
+            }
+
+            if (i < pipeline->command_count - 1) {
+                if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+                    perror("dup2");
+                    exit(1);
+                }
+            }
+
+            if (previous_read != -1) {
+                close(previous_read);
+            }
+
+            if (i < pipeline->command_count - 1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+            }
+
+            execvp(pipeline->commands[i].argv[0],
+                   pipeline->commands[i].argv);
+
+            perror("execvp");
+            exit(1);
+        }
+
+        if (previous_read != -1) {
+            close(previous_read);
+        }
+
+        if (i < pipeline->command_count - 1) {
+            close(pipefd[1]);
+            previous_read = pipefd[0];
+        }
     }
+
+    for (i = 0; i < pipeline->command_count; i++) {
+        if (waitpid(pids[i], &status, 0) < 0) {
+            perror("waitpid");
+        }
+    }
+
+    free(pids);
 
     return 0;
 }
