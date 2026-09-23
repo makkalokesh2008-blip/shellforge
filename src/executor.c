@@ -9,6 +9,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <string.h>
 
 static void redirect_input(Command *cmd, int background)
 {
@@ -79,10 +80,76 @@ static void redirect_output(Command *cmd)
     close(fd);
 }
 
+/*
+ * Build a readable command string for the job table.
+ */
+static char *build_command_string(Pipeline *pipeline)
+{
+    size_t size = 1;
+    char *command;
+
+    if (pipeline == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < pipeline->command_count; i++) {
+        Command *cmd = &pipeline->commands[i];
+
+        for (int j = 0; j < cmd->argc; j++) {
+            if (cmd->argv[j] != NULL) {
+                size += strlen(cmd->argv[j]) + 1;
+            }
+        }
+
+        if (i < pipeline->command_count - 1) {
+            size += 3;
+        }
+    }
+
+    if (pipeline->commands[pipeline->command_count - 1].background) {
+        size += 3;
+    }
+
+    command = malloc(size);
+
+    if (command == NULL) {
+        return NULL;
+    }
+
+    command[0] = '\0';
+
+    for (int i = 0; i < pipeline->command_count; i++) {
+        Command *cmd = &pipeline->commands[i];
+
+        for (int j = 0; j < cmd->argc; j++) {
+            if (cmd->argv[j] == NULL) {
+                continue;
+            }
+
+            if (command[0] != '\0') {
+                strcat(command, " ");
+            }
+
+            strcat(command, cmd->argv[j]);
+        }
+
+        if (i < pipeline->command_count - 1) {
+            strcat(command, " | ");
+        }
+    }
+
+    if (pipeline->commands[pipeline->command_count - 1].background) {
+        strcat(command, " &");
+    }
+
+    return command;
+}
+
 static int execute_command(Command *cmd)
 {
     pid_t pid;
     int status;
+    char *command_string = NULL;
 
     if (cmd == NULL || cmd->argc == 0 || cmd->argv[0] == NULL) {
         return 0;
@@ -96,6 +163,17 @@ static int execute_command(Command *cmd)
     }
 
     if (pid == 0) {
+
+        /*
+         * A background command gets its own process group.
+         */
+        if (cmd->background) {
+            if (setpgid(0, 0) < 0) {
+                perror("setpgid");
+                exit(1);
+            }
+        }
+
         redirect_input(cmd, cmd->background);
         redirect_output(cmd);
 
@@ -105,8 +183,40 @@ static int execute_command(Command *cmd)
         exit(1);
     }
 
+    /*
+     * Parent also sets the process group to avoid a race
+     * with the child.
+     */
     if (cmd->background) {
-        printf("[Background PID: %d]\n", pid);
+        if (setpgid(pid, pid) < 0 && errno != EACCES) {
+            perror("setpgid");
+        }
+
+        command_string = malloc(strlen(cmd->argv[0]) + 64);
+
+        if (command_string != NULL) {
+            command_string[0] = '\0';
+
+            for (int i = 0; i < cmd->argc; i++) {
+                if (i > 0) {
+                    strcat(command_string, " ");
+                }
+
+                strcat(command_string, cmd->argv[i]);
+            }
+
+            strcat(command_string, " &");
+
+            int job_id =
+                job_add(pid, JOB_RUNNING, command_string);
+
+            if (job_id > 0) {
+                printf("[%d] %d\n", job_id, pid);
+            }
+
+            free(command_string);
+        }
+
         fflush(stdout);
         return 0;
     }
@@ -125,13 +235,18 @@ int execute_pipeline(Pipeline *pipeline)
     int previous_read = -1;
     int pipefd[2];
     pid_t *pids;
+    pid_t pgid = 0;
     int status;
     int background;
+    char *command_string = NULL;
 
     if (pipeline == NULL || pipeline->command_count == 0) {
         return -1;
     }
 
+    /*
+     * Single command.
+     */
     if (pipeline->command_count == 1) {
         return execute_command(&pipeline->commands[0]);
     }
@@ -164,7 +279,26 @@ int execute_pipeline(Pipeline *pipeline)
             return -1;
         }
 
+        /*
+         * Child process.
+         */
         if (pids[i] == 0) {
+
+            /*
+             * Put every process in the pipeline
+             * into the same process group.
+             */
+            if (pgid == 0) {
+                if (setpgid(0, 0) < 0) {
+                    perror("setpgid");
+                    exit(1);
+                }
+            } else {
+                if (setpgid(0, pgid) < 0) {
+                    perror("setpgid");
+                    exit(1);
+                }
+            }
 
             if (previous_read != -1) {
                 if (dup2(previous_read, STDIN_FILENO) < 0) {
@@ -190,8 +324,8 @@ int execute_pipeline(Pipeline *pipeline)
             }
 
             /*
-             * Apply explicit redirections after pipe setup.
-             * This allows < and > to override the pipe endpoints.
+             * Explicit redirections are applied after
+             * pipe setup so they can override pipe endpoints.
              */
             redirect_input(
                 &pipeline->commands[i],
@@ -207,6 +341,22 @@ int execute_pipeline(Pipeline *pipeline)
             exit(1);
         }
 
+        /*
+         * Parent chooses the first child's PID as the
+         * process-group ID.
+         */
+        if (pgid == 0) {
+            pgid = pids[i];
+        }
+
+        /*
+         * Parent also sets the process group to avoid
+         * races with the child.
+         */
+        if (setpgid(pids[i], pgid) < 0 && errno != EACCES) {
+            perror("setpgid");
+        }
+
         if (previous_read != -1) {
             close(previous_read);
         }
@@ -217,10 +367,32 @@ int execute_pipeline(Pipeline *pipeline)
         }
     }
 
+    /*
+     * Background pipeline:
+     * add one job representing the entire pipeline.
+     */
     if (background) {
-        printf("[Background PID: %d]\n", pids[0]);
+
+        command_string = build_command_string(pipeline);
+
+        if (command_string != NULL) {
+
+            int job_id =
+                job_add(pgid, JOB_RUNNING, command_string);
+
+            if (job_id > 0) {
+                printf("[%d] %d\n", job_id, pgid);
+            }
+
+            free(command_string);
+        }
+
         fflush(stdout);
     } else {
+
+        /*
+         * Foreground pipeline waits for every process.
+         */
         for (i = 0; i < pipeline->command_count; i++) {
             if (waitpid(pids[i], &status, 0) < 0) {
                 if (errno != ECHILD) {

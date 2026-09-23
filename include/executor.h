@@ -2,6 +2,7 @@
 #define EXECUTOR_H
 
 #include "parser.h"
+#include "jobs.h"
 
 /*
  * Execute a complete pipeline.

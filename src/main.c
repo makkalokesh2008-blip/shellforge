@@ -14,6 +14,7 @@
 #include "parser.h"
 #include "expand.h"
 #include "executor.h"
+#include "jobs.h"
 
 static int builtin_execute(Command *cmd)
 {
@@ -21,20 +22,13 @@ static int builtin_execute(Command *cmd)
         return 0;
     }
 
-    /* exit */
     if (strcmp(cmd->argv[0], "exit") == 0) {
         return 1;
     }
 
-    /* cd */
     if (strcmp(cmd->argv[0], "cd") == 0) {
-        const char *path;
-
-        if (cmd->argc > 1) {
-            path = cmd->argv[1];
-        } else {
-            path = getenv("HOME");
-        }
+        const char *path =
+            (cmd->argc > 1) ? cmd->argv[1] : getenv("HOME");
 
         if (path == NULL) {
             path = ".";
@@ -47,7 +41,6 @@ static int builtin_execute(Command *cmd)
         return 0;
     }
 
-    /* pwd */
     if (strcmp(cmd->argv[0], "pwd") == 0) {
         char cwd[4096];
 
@@ -60,11 +53,8 @@ static int builtin_execute(Command *cmd)
         return 0;
     }
 
-    /* echo */
     if (strcmp(cmd->argv[0], "echo") == 0) {
-        int i;
-
-        for (i = 1; i < cmd->argc; i++) {
+        for (int i = 1; i < cmd->argc; i++) {
             if (i > 1) {
                 printf(" ");
             }
@@ -76,16 +66,76 @@ static int builtin_execute(Command *cmd)
         return 0;
     }
 
+    if (strcmp(cmd->argv[0], "jobs") == 0) {
+        jobs_print();
+        return 0;
+    }
+
+    if (strcmp(cmd->argv[0], "bg") == 0) {
+        if (cmd->argc != 2) {
+            fprintf(stderr, "bg: usage: bg <job_id>\n");
+            return 0;
+        }
+
+        int job_id = atoi(cmd->argv[1]);
+        Job *job = job_find(job_id);
+
+        if (job == NULL) {
+            fprintf(stderr, "bg: no such job\n");
+            return 0;
+        }
+
+        job_continue(job->pgid);
+        printf("[%d] Running %s\n",
+               job->job_id,
+               job->command);
+
+        return 0;
+    }
+
+    if (strcmp(cmd->argv[0], "fg") == 0) {
+        if (cmd->argc != 2) {
+            fprintf(stderr, "fg: usage: fg <job_id>\n");
+            return 0;
+        }
+
+        int job_id = atoi(cmd->argv[1]);
+        Job *job = job_find(job_id);
+
+        if (job == NULL) {
+            fprintf(stderr, "fg: no such job\n");
+            return 0;
+        }
+
+        pid_t pgid = job->pgid;
+
+        if (job->state == JOB_STOPPED) {
+            kill(-pgid, SIGCONT);
+            job->state = JOB_RUNNING;
+        }
+
+        /*
+         * Wait until SIGCHLD marks this job as done.
+         */
+        while (job->state == JOB_RUNNING) {
+            pause();
+        }
+
+        if (job->state == JOB_DONE) {
+            job_remove(job_id);
+        }
+
+        return 0;
+    }
+
     return -1;
 }
 
 static void print_tokens(Token *tokens, int count)
 {
-    int i;
-
     printf("\n------------ TOKENS ------------\n");
 
-    for (i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         printf(" %d : %-12s %s\n",
                i,
                token_type_to_string(tokens[i].type),
@@ -98,10 +148,22 @@ static void print_tokens(Token *tokens, int count)
 static void sigchld_handler(int sig)
 {
     int saved_errno = errno;
+    int status;
+    pid_t pid;
 
     (void)sig;
 
-    while (waitpid(-1, NULL, WNOHANG) > 0) {
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        Job *job = job_find_by_pgid(pid);
+
+        if (job != NULL) {
+            if (WIFSTOPPED(status)) {
+                job_stop(pid);
+            } else if (WIFEXITED(status) ||
+                       WIFSIGNALED(status)) {
+                job_done(pid);
+            }
+        }
     }
 
     errno = saved_errno;
@@ -110,6 +172,8 @@ static void sigchld_handler(int sig)
 int main(void)
 {
     char *line;
+
+    jobs_init();
 
     signal(SIGCHLD, sigchld_handler);
 
@@ -181,10 +245,6 @@ int main(void)
         pipeline_print(&pipeline);
         printf("-----------------------------------------------\n");
 
-        /*
-         * Built-ins are executed directly by the shell.
-         * External commands are executed using executor.c.
-         */
         if (pipeline.command_count == 1 &&
             pipeline.commands[0].input == NULL &&
             pipeline.commands[0].output == NULL &&
@@ -207,6 +267,7 @@ int main(void)
             if (builtin_result == -1) {
                 execute_pipeline(&pipeline);
             }
+
         } else {
             execute_pipeline(&pipeline);
         }
