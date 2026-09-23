@@ -8,6 +8,76 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <errno.h>
+
+static void redirect_input(Command *cmd, int background)
+{
+    int fd;
+
+    if (cmd->input != NULL) {
+        fd = open(cmd->input, O_RDONLY);
+
+        if (fd < 0) {
+            perror(cmd->input);
+            exit(1);
+        }
+
+        if (dup2(fd, STDIN_FILENO) < 0) {
+            perror("dup2");
+            close(fd);
+            exit(1);
+        }
+
+        close(fd);
+    } else if (background) {
+        fd = open("/dev/null", O_RDONLY);
+
+        if (fd < 0) {
+            perror("/dev/null");
+            exit(1);
+        }
+
+        if (dup2(fd, STDIN_FILENO) < 0) {
+            perror("dup2");
+            close(fd);
+            exit(1);
+        }
+
+        close(fd);
+    }
+}
+
+static void redirect_output(Command *cmd)
+{
+    int fd;
+
+    if (cmd->output == NULL) {
+        return;
+    }
+
+    if (cmd->append) {
+        fd = open(cmd->output,
+                  O_WRONLY | O_CREAT | O_APPEND,
+                  0644);
+    } else {
+        fd = open(cmd->output,
+                  O_WRONLY | O_CREAT | O_TRUNC,
+                  0644);
+    }
+
+    if (fd < 0) {
+        perror(cmd->output);
+        exit(1);
+    }
+
+    if (dup2(fd, STDOUT_FILENO) < 0) {
+        perror("dup2");
+        close(fd);
+        exit(1);
+    }
+
+    close(fd);
+}
 
 static int execute_command(Command *cmd)
 {
@@ -26,51 +96,8 @@ static int execute_command(Command *cmd)
     }
 
     if (pid == 0) {
-        int fd;
-
-        /* Input redirection */
-        if (cmd->input != NULL) {
-            fd = open(cmd->input, O_RDONLY);
-
-            if (fd < 0) {
-                perror(cmd->input);
-                exit(1);
-            }
-
-            if (dup2(fd, STDIN_FILENO) < 0) {
-                perror("dup2");
-                close(fd);
-                exit(1);
-            }
-
-            close(fd);
-        }
-
-        /* Output redirection */
-        if (cmd->output != NULL) {
-            if (cmd->append) {
-                fd = open(cmd->output,
-                          O_WRONLY | O_CREAT | O_APPEND,
-                          0644);
-            } else {
-                fd = open(cmd->output,
-                          O_WRONLY | O_CREAT | O_TRUNC,
-                          0644);
-            }
-
-            if (fd < 0) {
-                perror(cmd->output);
-                exit(1);
-            }
-
-            if (dup2(fd, STDOUT_FILENO) < 0) {
-                perror("dup2");
-                close(fd);
-                exit(1);
-            }
-
-            close(fd);
-        }
+        redirect_input(cmd, cmd->background);
+        redirect_output(cmd);
 
         execvp(cmd->argv[0], cmd->argv);
 
@@ -78,11 +105,15 @@ static int execute_command(Command *cmd)
         exit(1);
     }
 
-    if (!cmd->background) {
-        if (waitpid(pid, &status, 0) < 0) {
-            perror("waitpid");
-            return -1;
-        }
+    if (cmd->background) {
+        printf("[Background PID: %d]\n", pid);
+        fflush(stdout);
+        return 0;
+    }
+
+    if (waitpid(pid, &status, 0) < 0) {
+        perror("waitpid");
+        return -1;
     }
 
     return 0;
@@ -93,8 +124,9 @@ int execute_pipeline(Pipeline *pipeline)
     int i;
     int previous_read = -1;
     int pipefd[2];
-    int status;
     pid_t *pids;
+    int status;
+    int background;
 
     if (pipeline == NULL || pipeline->command_count == 0) {
         return -1;
@@ -103,6 +135,9 @@ int execute_pipeline(Pipeline *pipeline)
     if (pipeline->command_count == 1) {
         return execute_command(&pipeline->commands[0]);
     }
+
+    background =
+        pipeline->commands[pipeline->command_count - 1].background;
 
     pids = malloc(sizeof(pid_t) * pipeline->command_count);
 
@@ -154,6 +189,17 @@ int execute_pipeline(Pipeline *pipeline)
                 close(pipefd[1]);
             }
 
+            /*
+             * Apply explicit redirections after pipe setup.
+             * This allows < and > to override the pipe endpoints.
+             */
+            redirect_input(
+                &pipeline->commands[i],
+                background && i == 0
+            );
+
+            redirect_output(&pipeline->commands[i]);
+
             execvp(pipeline->commands[i].argv[0],
                    pipeline->commands[i].argv);
 
@@ -171,9 +217,16 @@ int execute_pipeline(Pipeline *pipeline)
         }
     }
 
-    for (i = 0; i < pipeline->command_count; i++) {
-        if (waitpid(pids[i], &status, 0) < 0) {
-            perror("waitpid");
+    if (background) {
+        printf("[Background PID: %d]\n", pids[0]);
+        fflush(stdout);
+    } else {
+        for (i = 0; i < pipeline->command_count; i++) {
+            if (waitpid(pids[i], &status, 0) < 0) {
+                if (errno != ECHILD) {
+                    perror("waitpid");
+                }
+            }
         }
     }
 

@@ -1,5 +1,8 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -92,9 +95,23 @@ static void print_tokens(Token *tokens, int count)
     printf("--------------------------------\n");
 }
 
+static void sigchld_handler(int sig)
+{
+    int saved_errno = errno;
+
+    (void)sig;
+
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+    }
+
+    errno = saved_errno;
+}
+
 int main(void)
 {
     char *line;
+
+    signal(SIGCHLD, sigchld_handler);
 
     printf("=====================================\n");
     printf("        Shellforge\n");
@@ -168,10 +185,11 @@ int main(void)
          * Built-ins are executed directly by the shell.
          * External commands are executed using executor.c.
          */
-       if (pipeline.command_count == 1 &&
-    pipeline.commands[0].input == NULL &&
-    pipeline.commands[0].output == NULL &&
-    !pipeline.commands[0].background) {
+        if (pipeline.command_count == 1 &&
+            pipeline.commands[0].input == NULL &&
+            pipeline.commands[0].output == NULL &&
+            !pipeline.commands[0].background) {
+
             int builtin_result =
                 builtin_execute(&pipeline.commands[0]);
 
