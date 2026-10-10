@@ -1,0 +1,11 @@
+help
+getpid
+ps
+echo hello from NanoBoot
+isotest
+ls
+cat README.txt
+cat hello.txt
+sleep 3
+forktest
+exit

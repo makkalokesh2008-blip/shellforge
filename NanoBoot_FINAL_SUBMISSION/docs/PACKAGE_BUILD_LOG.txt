@@ -1,0 +1,37 @@
+NanoBoot package build log
+Date: 2026-10-10
+
+BUILD RESULT: PASS
+Toolchain used in the packaging environment:
+  Clang cross target: riscv64-unknown-elf
+  Linker: LLD
+  Binary/disassembly tools: llvm-objcopy / llvm-objdump
+  Compiler flags include -Wall -Wextra -Werror and -march=rv64imac_zicsr_zifencei.
+
+Checks completed:
+  [PASS] Kernel C and assembly compilation
+  [PASS] User shell C and assembly compilation
+  [PASS] User shell ELF link and binary extraction
+  [PASS] Kernel ELF link and binary extraction
+  [PASS] Static Makefile verification
+  [PASS] Kernel _start at 0x80200000
+  [PASS] User _start at 0x40000000
+  [PASS] BSS start/end symbols present
+  [PASS] Trap entry symbols present
+  [PASS] Embedded user shell symbols present
+  [PASS] Kernel and user disassembly generated
+  [PASS] Shell script syntax checks
+  [PASS] Python smoke-driver syntax check
+
+Artifact sizes from this build:
+  kernel.bin       15272 bytes
+  kernel.elf       29816 bytes
+  user/sh.bin       2974 bytes
+  user/sh.elf      10352 bytes
+  kernel.disasm   117932 bytes
+  user/sh.disasm   28921 bytes
+
+RUNTIME STATUS: NOT EXECUTED IN THIS PACKAGING ENVIRONMENT
+qemu-system-riscv64 is not installed here. Package-repository access timed out, so QEMU could not be installed to run the live kernel. No runtime system-call pass is claimed by this log.
+
+On the Ubuntu/WSL target, run `bash START_NANOBOOT.sh`. It rebuilds the sources with the installed GNU RISC-V toolchain, performs static checks, drives the QEMU shell through the scripted commands, saves tests/qemu-output.txt and tests/verification-results.txt, then opens the interactive console if the smoke test passes.

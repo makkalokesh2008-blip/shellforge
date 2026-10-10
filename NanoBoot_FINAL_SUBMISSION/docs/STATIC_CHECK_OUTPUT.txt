@@ -1,0 +1,2 @@
+NOTE: qemu-system-riscv64 not installed; static checks continue.
+Static verification: PASS (RISC-V ELF, trap symbols, embedded shell, user entry address)

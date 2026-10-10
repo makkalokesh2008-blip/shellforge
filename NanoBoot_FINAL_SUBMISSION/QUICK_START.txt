@@ -1,0 +1,31 @@
+NANOBOOT — QUICK START
+======================
+
+1. Extract NanoBoot_FINAL_SUBMISSION.zip.
+2. Open Ubuntu/WSL and cd into the extracted folder. Example if it is in Windows Downloads:
+
+   cd /mnt/c/Users/makka/Downloads/NanoBoot_FINAL_SUBMISSION
+
+3. Start the complete build + smoke test + interactive demo:
+
+   bash START_NANOBOOT.sh
+
+4. At the user shell prompt, demonstrate these one by one:
+
+   help
+   getpid
+   ps
+   echo hello from NanoBoot
+   isotest
+   ls
+   cat README.txt
+   cat hello.txt
+   sleep 3
+   forktest
+
+5. Show tests/qemu-output.txt as the automated serial transcript and tests/verification-results.txt as the build/test log. Both are created by the launcher. `kernel.disasm` and `user/sh.disasm` also show the compiled machine instructions.
+6. Close QEMU with Ctrl+A, then X.
+
+If Ubuntu dependencies are missing, the script tries to install them with apt-get and may ask for your sudo password. This first-time install requires internet access. Runtime verification is only complete after every automated smoke-test check reports PASS.
+
+This release's static compilation and static verification passed during packaging. A live QEMU run could not be performed in the packaging environment because qemu-system-riscv64 was not installed there.

@@ -1,0 +1,17 @@
+NanoBoot Final Submission — Release Status
+==========================================
+Package preparation date: 2026-10-10
+
+What was verified in the packaging environment:
+- Kernel and user shell compiled and linked with a RISC-V-targeting Clang/LLD toolchain.
+- Static ELF/symbol/image-size checks passed.
+- Kernel entry point is linked at 0x80200000 and user-shell entry point at 0x40000000.
+- RISC-V kernel and user-shell disassembly files were generated.
+- Bash launcher/setup/test scripts passed syntax checks; Python smoke-test driver passed syntax compilation.
+
+What remains to verify on the target Ubuntu/WSL machine:
+- The packaging environment did not have qemu-system-riscv64, and could not install it because package repositories were unreachable. Therefore a live QEMU boot and live syscall/fork/wait runtime pass are NOT claimed here.
+- Run `bash START_NANOBOOT.sh`. This rebuilds with the Ubuntu RISC-V GNU toolchain, runs static checks and the scripted QEMU smoke test. Runtime testing must print all PASS checks and finish with `Smoke test PASS` before you present those operations as demonstrated.
+- The script writes `tests/qemu-output.txt` (actual QEMU serial transcript) and `tests/verification-results.txt` (actual test log) when it runs.
+
+This is a self-contained source + prebuilt-artifact project package. It is not an assertion that runtime tests passed on a machine where QEMU was unavailable.
