@@ -109,7 +109,7 @@ def main() -> int:
                     if not wait_for(proc, b"shell exiting", 5.0, "shell exit message"):
                         return fail("shell did not handle the exit command", proc)
                     break
-                timeout = 8.0 if command == "forktest" else 5.0
+                timeout = 8.0 if command in ("forktest", "schedtest") else 5.0
                 if not wait_for_prompt_count(proc, current, timeout, command):
                     return fail(f"no prompt after command {command!r}", proc)
 

@@ -60,6 +60,8 @@ assert_contains "isolation PASS: kernel address rejected" "user/kernel address v
 assert_contains "awake" "sleep/wakeup path"
 assert_contains "forktest: child running" "fork child ran"
 assert_contains "forktest: wait returned pid=" "wait returned child pid"
+assert_contains "schedtest: round-robin interleaving PASS" "round-robin scheduler interleaving"
+assert_contains "per-process Sv39 isolation verified" "per-process virtual memory isolation"
 
 echo
 echo "Smoke test PASS. Transcript saved to $OUT"

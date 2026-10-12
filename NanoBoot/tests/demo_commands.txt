@@ -8,4 +8,5 @@ cat README.txt
 cat hello.txt
 sleep 3
 forktest
+schedtest
 exit

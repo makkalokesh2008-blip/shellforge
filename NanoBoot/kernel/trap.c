@@ -61,12 +61,19 @@ trapframe_t *trap_handler(trapframe_t *tf)
         proc_exit(-1);
     }
 
-    if (!current_proc) return idle_target();
+    while (!current_proc) {
+        uint64_t deadline = r_time() + TIMER_TICKS;
+        while (r_time() < deadline) {
+            asm volatile("nop");
+        }
+        timer_tick();
+        current_proc = proc_schedule();
+    }
+
     if (current_proc->state != P_RUNNING) {
         proc_t *next = proc_schedule();
-        current_proc = next;
+        if (next) current_proc = next;
     }
-    if (!current_proc) return idle_target();
 
     switch_to(current_proc);
     return current_proc->tf;

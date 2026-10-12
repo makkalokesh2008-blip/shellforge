@@ -23,6 +23,7 @@ TEST_COMMANDS = [
     ("cat README.txt", ["NanoBoot RAMFS", "This file is stored in kernel memory."]),
     ("sleep 3", ["sleeping...", "awake"]),
     ("forktest", ["forktest: child running", "forktest: wait returned pid="]),
+    ("schedtest", ["schedtest: round-robin interleaving PASS"]),
     ("echo \"unclosed quote", ["syntax error: unclosed quote"]),
     ("badcommand", ["unknown command; type 'help'"]),
     ("echo hello | cat", ["pipe: not supported by NanoBoot architecture (no pipe syscall)"]),
@@ -30,7 +31,7 @@ TEST_COMMANDS = [
     ("echo test >", ["syntax error: missing file for redirection"]),
     ("echo test |", ["syntax error: missing command after '|'"]),
     ("sleep 1 &", ["background: not supported by NanoBoot architecture"]),
-    ("isotest", ["isolation PASS: kernel address rejected"]),
+    ("isotest", ["isolation PASS: per-process Sv39 isolation verified"]),
     ("exit", ["shell exiting"]),
 ]
 
@@ -124,7 +125,7 @@ def main() -> int:
                     print(f"PASS [{passed}/{total}]: exit command")
                     break
 
-                timeout = 8.0 if cmd in ("forktest", "sleep 3") else 5.0
+                timeout = 8.0 if cmd in ("forktest", "schedtest", "sleep 3") else 5.0
                 if not wait_for_prompt_count(proc, current_prompts, timeout):
                     print(f"FAIL: timeout waiting for prompt after '{cmd}'", file=sys.stderr)
                     return 1

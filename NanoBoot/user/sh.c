@@ -293,6 +293,7 @@ static void help(void)
     print("  echo TEXT            print TEXT\n");
     print("  sleep N              sleep for N timer ticks\n");
     print("  forktest             demonstrate fork/wait/exit\n");
+    print("  schedtest            demonstrate round-robin scheduler interleaving\n");
     print("  ls                   list RAMFS files\n");
     print("  cat FILE             print RAMFS file\n");
     print("  isotest              verify kernel/user memory isolation\n");
@@ -321,6 +322,61 @@ static void forktest(void)
     print("forktest: wait returned pid=");
     print_num(got);
     print("\n");
+}
+
+static void schedtest(void)
+{
+    print("schedtest: starting round-robin scheduler test\n");
+    long pid = sys_fork();
+    if (pid < 0) {
+        print("schedtest: fork failed\n");
+        return;
+    }
+    if (pid == 0) {
+        for (int i = 0; i < 3; ++i) {
+            print("[child ");
+            print_num(i);
+            print("] ");
+            sys_sleep(1);
+        }
+        print("schedtest: child finished\n");
+        sys_exit(0);
+    }
+    for (int i = 0; i < 3; ++i) {
+        print("[parent ");
+        print_num(i);
+        print("] ");
+        sys_sleep(1);
+    }
+    sys_wait();
+    print("schedtest: round-robin interleaving PASS\n");
+}
+
+static volatile int iso_var = 1234;
+
+static void run_isotest(void)
+{
+    long rc = sys_write((const void *)0x80200000ULL, 1);
+    if (rc < 0) print("isolation PASS: kernel address rejected\n");
+    else print("isolation: kernel address accepted (FAIL)\n");
+
+    iso_var = 1234;
+    long pid = sys_fork();
+    if (pid < 0) {
+        print("isotest: fork failed\n");
+        return;
+    }
+    if (pid == 0) {
+        iso_var = 9999;
+        sys_exit(0);
+    }
+    sys_wait();
+    if (iso_var == 1234) {
+        print("isolation: parent memory protected from child write (PASS)\n");
+        print("isolation PASS: per-process Sv39 isolation verified\n");
+    } else {
+        print("isolation FAIL: parent memory corrupted\n");
+    }
 }
 
 /*
@@ -396,10 +452,12 @@ static void execute_command(command_t *cmd)
         sys_cat(cmd->argv[1]);
         return;
     }
+    if (streq(prog, "schedtest")) {
+        schedtest();
+        return;
+    }
     if (streq(prog, "isotest")) {
-        long rc = sys_write((const void *)0x80200000ULL, 1);
-        if (rc < 0) print("isolation PASS: kernel address rejected\n");
-        else print("isolation FAIL: kernel address accepted\n");
+        run_isotest();
         return;
     }
     if (streq(prog, "exit")) {

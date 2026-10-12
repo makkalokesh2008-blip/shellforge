@@ -80,11 +80,7 @@ static long sys_sleep(trapframe_t *tf)
     if (n == 0)
         return 0;
 
-    uint64_t deadline = r_time() + n * TIMER_TICKS;
-
-    while (r_time() < deadline)
-        asm volatile("nop");
-
+    proc_sleep(n);
     return 0;
 }
 
