@@ -9,7 +9,7 @@ CFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany -ffreestandi
 ASFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mno-relax -Iinclude
 LDFLAGS := -T linker.ld -nostdlib -static -melf64lriscv --no-relax
 USER_CFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany -ffreestanding -fno-builtin -fno-stack-protector -fno-pie -mno-relax -Wall -Wextra -Werror -O2 -Iinclude -Iuser
-USER_LDFLAGS := -T user/user.ld -nostdlib -static -melf64lriscv --no-relax
+USER_LDFLAGS := -T user/user.ld -nostdlib -static -melf64lriscv --no-relax --no-warn-rwx-segments
 
 KERNEL_C_OBJS := \
     kernel/main.o kernel/uart.o kernel/string.o kernel/spinlock.o \

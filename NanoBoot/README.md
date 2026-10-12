@@ -136,8 +136,34 @@ cat README.txt
 cat hello.txt
 sleep 3
 forktest
+schedtest
 exit
 ```
+
+
+## Automated Regression Test Suite
+
+Run the comprehensive 20-test shell and syscall regression suite:
+
+```bash
+python3 tests/test_lexer_parser.py
+```
+
+This verifies boot, command dispatch, quote handling, whitespace, argument parsing, syntax error handling, isolation, scheduling, and graceful handling of unsupported operators.
+
+## Architectural Notes & Limitations
+
+- **RISC-V Boot, UART, Traps, Syscalls**: PASS (verified on QEMU virt)
+- **Process Lifecycle (fork, exit, wait, ps)**: PASS (verified)
+- **Sv39 Virtual Memory & Isolation**: PASS (verified via isotest)
+- **Timer, Preemption, Sleep/Wakeup**: PASS (verified via sleep 3 and schedtest)
+- **RAMFS File Operations (ls, cat)**: PASS (verified)
+- **Shell Lexer & Parser**: PASS (20/20 regression tests PASS)
+- **Shell Pipes**: PARTIAL (parsed with diagnostic; no fd table / pipe syscall in kernel)
+- **I/O Redirection**: PARTIAL (parsed and validated; RAMFS is read-only)
+- **Background Execution**: PARTIAL (parsed with syntax validation; single console UART)
+- **Copy-on-Write (COW) Fork**: NOT IMPLEMENTED (direct physical page copy via vm_clone_user)
+- **Multi-Hart (SMP)**: NOT IMPLEMENTED (Hart 0 single-core target)
 
 ## Verification
 
